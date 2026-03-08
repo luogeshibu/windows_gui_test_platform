@@ -3,10 +3,6 @@ from app.core.case_loader import load_case
 
 
 def is_plain_text_key(key: str) -> bool:
-    """
-    普通字符键不应再执行 key_down/key_up，
-    否则会和 type_text/paste_text 重复。
-    """
     if not key:
         return False
     return len(key) == 1 and key.isprintable()
@@ -95,6 +91,12 @@ def run_case(case_path: str):
                     step["y"]
                 )
 
+            elif action == "double_click_point":
+                executor.double_click_point(
+                    step["x"],
+                    step["y"]
+                )
+
             elif action == "right_click_point":
                 executor.right_click_point(
                     step["x"],
@@ -125,13 +127,11 @@ def run_case(case_path: str):
 
             elif action == "key_down":
                 key = step["key"]
-                # 普通字符跳过，避免和 type_text / paste_text 重复
                 if not is_plain_text_key(key):
                     executor.key_down(key)
 
             elif action == "key_up":
                 key = step["key"]
-                # 普通字符跳过，避免和 type_text / paste_text 重复
                 if not is_plain_text_key(key):
                     executor.key_up(key)
 

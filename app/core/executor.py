@@ -9,13 +9,7 @@ class GUIExecutor:
         self.matcher = TemplateMatcher(template_dir, threshold)
         self.recorder = RunRecorder(run_root)
 
-    # =========================
-    # 通用
-    # =========================
     def _release_modifiers(self):
-        """
-        释放残留修饰键，避免输入和快捷键串键。
-        """
         for key in ["shift", "ctrl", "alt", "win"]:
             try:
                 pyautogui.keyUp(key)
@@ -107,6 +101,9 @@ class GUIExecutor:
     def click_point(self, x, y):
         pyautogui.click(x, y)
 
+    def double_click_point(self, x, y):
+        pyautogui.doubleClick(x, y)
+
     def right_click_point(self, x, y):
         pyautogui.rightClick(x, y)
 
@@ -142,13 +139,9 @@ class GUIExecutor:
         pyautogui.keyUp(key)
 
     def hotkey(self, keys):
-        """
-        对常见组合键做增强处理，尤其是 win+d。
-        """
         self._release_modifiers()
         normalized = [k.lower() for k in keys]
 
-        # Windows 组合键增强处理
         if normalized == ["win", "d"]:
             pyautogui.keyDown("win")
             time.sleep(0.05)
@@ -165,7 +158,6 @@ class GUIExecutor:
             pyautogui.keyUp("win")
             return
 
-        # 常见快捷键增强
         if normalized == ["ctrl", "s"]:
             pyautogui.keyDown("ctrl")
             time.sleep(0.03)
@@ -190,21 +182,13 @@ class GUIExecutor:
             pyautogui.keyUp("alt")
             return
 
-        # 默认通用写法
         pyautogui.hotkey(*normalized)
 
     def type_text(self, text):
-        """
-        普通逐字输入。
-        建议短英文用它，复杂文本优先 paste_text。
-        """
         self._release_modifiers()
         pyautogui.write(text, interval=0.03)
 
     def paste_text(self, text):
-        """
-        更稳的输入方式，适合标点、大写、长文本。
-        """
         try:
             import pyperclip
             pyperclip.copy(text)

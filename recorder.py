@@ -1,7 +1,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import keyboard
 from pynput import mouse
@@ -15,17 +15,17 @@ CASE_DIR.mkdir(exist_ok=True)
 class AdvancedRecorder:
     """
     全量录制器（Windows 稳定修正版）
-    - 鼠标：pynput
-    - 键盘：keyboard
-    - 支持：
-      1. 鼠标移动
-      2. 左/右/中键点击
-      3. 滚轮
-      4. 文本输入
-      5. 单键 press_key
-      6. 快捷键 hotkey（如 ctrl+s / win+d）
-      7. sleep 间隔
-      8. ESC 停止录制
+    支持：
+    1. 鼠标移动
+    2. 左/右/中键点击
+    3. 左键双击
+    4. 左键拖拽
+    5. 滚轮
+    6. 文本输入
+    7. 单键 press_key
+    8. 快捷键 hotkey（如 ctrl+s / win+d）
+    9. sleep 间隔
+    10. ESC 停止录制
     """
 
     def __init__(self):
@@ -51,9 +51,21 @@ class AdvancedRecorder:
         self.last_key_time: float = 0.0
         self.key_debounce: float = 0.03
 
-        # 当前是否有“单独修饰键”待确认
+        # 单独修饰键状态
         self.pending_single_modifier: Optional[str] = None
         self.modifier_used_in_combo: bool = False
+
+        # 双击检测
+        self.last_left_click_time: float = 0.0
+        self.last_left_click_pos: Optional[Tuple[int, int]] = None
+        self.double_click_threshold: float = 0.35
+        self.double_click_distance: int = 8
+
+        # 拖拽检测
+        self.mouse_down_button: Optional[str] = None
+        self.mouse_down_pos: Optional[Tuple[int, int]] = None
+        self.mouse_current_pos: Optional[Tuple[int, int]] = None
+        self.drag_threshold: int = 12
 
         self.special_key_map = {
             "enter": "enter",
@@ -111,23 +123,18 @@ class AdvancedRecorder:
 
         name = name.lower().strip()
 
-        # Windows 键
         if name in {"windows", "left windows", "right windows"}:
             return "win"
 
-        # Ctrl
         if name in {"ctrl", "control", "left ctrl", "right ctrl"}:
             return "ctrl"
 
-        # Shift
         if name in {"shift", "left shift", "right shift"}:
             return "shift"
 
-        # Alt
         if name in {"alt", "left alt", "right alt", "alt gr"}:
             return "alt"
 
-        # 特殊键映射
         if name in self.special_key_map:
             return self.special_key_map[name]
 
@@ -137,12 +144,23 @@ class AdvancedRecorder:
         order = ["ctrl", "alt", "shift", "win"]
         return [k for k in order if k in self.pressed_modifiers]
 
+    def is_near(self, p1: Optional[Tuple[int, int]], p2: Optional[Tuple[int, int]], max_distance=8) -> bool:
+        if p1 is None or p2 is None:
+            return False
+        return abs(p1[0] - p2[0]) <= max_distance and abs(p1[1] - p2[1]) <= max_distance
+
     # =========================================================
     # 鼠标事件
     # =========================================================
     def on_move(self, x, y):
         if not self.running:
             return
+
+        current_pos = (int(x), int(y))
+
+        # 如果按着鼠标左键，更新当前位置，用于拖拽判断
+        if self.mouse_down_button is not None:
+            self.mouse_current_pos = current_pos
 
         now = self._now()
         if now - self.last_move_record_time < self.move_record_interval:
@@ -160,26 +178,116 @@ class AdvancedRecorder:
         print(f"[MOVE] ({x}, {y})")
 
     def on_click(self, x, y, button, pressed):
-        if not self.running or not pressed:
+        if not self.running:
             return
 
+        button_name = str(button).split(".")[-1]
+        current_pos = (int(x), int(y))
+        now = self._now()
+
+        # =========================
+        # 鼠标按下
+        # =========================
+        if pressed:
+            self.flush_text()
+            self.record_sleep()
+
+            self.mouse_down_button = button_name
+            self.mouse_down_pos = current_pos
+            self.mouse_current_pos = current_pos
+
+            print(f"[MOUSE_DOWN] {button_name} ({x}, {y})")
+            return
+
+        # =========================
+        # 鼠标松开
+        # =========================
+        if self.mouse_down_button == button_name and self.mouse_down_pos is not None:
+            start_x, start_y = self.mouse_down_pos
+            end_x, end_y = self.mouse_current_pos if self.mouse_current_pos else current_pos
+
+            dx = abs(end_x - start_x)
+            dy = abs(end_y - start_y)
+
+            # 先判断是不是拖拽
+            if button_name == "left" and (dx >= self.drag_threshold or dy >= self.drag_threshold):
+                self.flush_text()
+                self.record_sleep()
+
+                self.steps.append({
+                    "action": "drag_point",
+                    "start_x": start_x,
+                    "start_y": start_y,
+                    "end_x": end_x,
+                    "end_y": end_y,
+                    "button": "left",
+                    "duration": 0.5
+                })
+                print(f"[DRAG] left ({start_x}, {start_y}) -> ({end_x}, {end_y})")
+
+                self.mouse_down_button = None
+                self.mouse_down_pos = None
+                self.mouse_current_pos = None
+                self.last_left_click_time = 0.0
+                self.last_left_click_pos = None
+                return
+
+        # =========================
+        # 非拖拽：点击 / 双击
+        # =========================
         self.flush_text()
         self.record_sleep()
 
-        button_name = str(button).split(".")[-1]  # left/right/middle
-        if button_name == "right":
-            action = "right_click_point"
-        elif button_name == "middle":
-            action = "middle_click_point"
-        else:
-            action = "click_point"
+        if button_name == "left":
+            is_double = (
+                self.last_left_click_time > 0
+                and (now - self.last_left_click_time) <= self.double_click_threshold
+                and self.is_near(self.last_left_click_pos, current_pos, self.double_click_distance)
+            )
 
-        self.steps.append({
-            "action": action,
-            "x": int(x),
-            "y": int(y)
-        })
-        print(f"[CLICK] {button_name} ({x}, {y})")
+            if is_double:
+                self.steps.append({
+                    "action": "double_click_point",
+                    "x": int(x),
+                    "y": int(y)
+                })
+                print(f"[DOUBLE_CLICK] left ({x}, {y})")
+                self.last_left_click_time = 0.0
+                self.last_left_click_pos = None
+
+                self.mouse_down_button = None
+                self.mouse_down_pos = None
+                self.mouse_current_pos = None
+                return
+
+            self.steps.append({
+                "action": "click_point",
+                "x": int(x),
+                "y": int(y)
+            })
+            print(f"[CLICK] left ({x}, {y})")
+            self.last_left_click_time = now
+            self.last_left_click_pos = current_pos
+
+        elif button_name == "right":
+            self.steps.append({
+                "action": "right_click_point",
+                "x": int(x),
+                "y": int(y)
+            })
+            print(f"[CLICK] right ({x}, {y})")
+
+        elif button_name == "middle":
+            self.steps.append({
+                "action": "middle_click_point",
+                "x": int(x),
+                "y": int(y)
+            })
+            print(f"[CLICK] middle ({x}, {y})")
+
+        self.mouse_down_button = None
+        self.mouse_down_pos = None
+        self.mouse_current_pos = None
 
     def on_scroll(self, x, y, dx, dy):
         if not self.running:
@@ -208,16 +316,11 @@ class AdvancedRecorder:
         if not key_name:
             return
 
-        # ESC 停止录制
         if event.event_type == "down" and key_name == "esc":
             self.stop()
             return
 
-        # -------------------------
-        # KEY DOWN
-        # -------------------------
         if event.event_type == "down":
-            # 修饰键按下
             if key_name in {"ctrl", "shift", "alt", "win"}:
                 if key_name not in self.pressed_modifiers:
                     self.pressed_modifiers.add(key_name)
@@ -225,7 +328,6 @@ class AdvancedRecorder:
                     self.modifier_used_in_combo = False
                 return
 
-            # 当前如果有修饰键，则优先识别为 hotkey
             current_mods = self.current_modifiers()
             if current_mods:
                 now = self._now()
@@ -241,13 +343,11 @@ class AdvancedRecorder:
                     self.modifier_used_in_combo = True
                 return
 
-            # 普通单字符输入
             if len(key_name) == 1:
                 self.text_buffer += key_name
                 self.last_key_time = self._now()
                 return
 
-            # 其它特殊单键
             now = self._now()
             if now - self.last_key_time >= self.key_debounce:
                 self.append_step(
@@ -257,11 +357,7 @@ class AdvancedRecorder:
                 self.last_key_time = now
             return
 
-        # -------------------------
-        # KEY UP
-        # -------------------------
         elif event.event_type == "up":
-            # 单独修饰键：如果没有参与组合，则记录成 press_key
             if key_name in {"ctrl", "shift", "alt", "win"}:
                 if self.pending_single_modifier == key_name and not self.modifier_used_in_combo:
                     now = self._now()
@@ -312,10 +408,12 @@ class AdvancedRecorder:
         print("=" * 60)
         print("全量录制器已启动（Windows 稳定修正版）")
         print("说明：")
-        print("1. 自动记录 鼠标移动 / 点击 / 滚轮 / 键盘输入 / 快捷键")
+        print("1. 自动记录 鼠标移动 / 点击 / 双击 / 拖拽 / 滚轮 / 键盘输入 / 快捷键")
         print("2. 已增强识别 Win+D / Ctrl+S / Shift")
-        print("3. 按 ESC 停止录制并生成 JSON")
-        print("4. 建议用管理员权限运行 PowerShell / CMD")
+        print("3. 支持左键双击识别")
+        print("4. 支持左键拖拽识别")
+        print("5. 按 ESC 停止录制并生成 JSON")
+        print("6. 建议用管理员权限运行 PowerShell / CMD")
         print("=" * 60)
 
         mouse_listener = mouse.Listener(
