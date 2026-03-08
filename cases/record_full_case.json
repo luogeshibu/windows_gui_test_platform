@@ -1,0 +1,79 @@
+{
+  "name": "record_full_case",
+  "steps": [
+    {
+      "action": "sleep",
+      "seconds": 2.29
+    },
+    {
+      "action": "hotkey",
+      "keys": [
+        "win",
+        "d"
+      ]
+    },
+    {
+      "action": "sleep",
+      "seconds": 0.69
+    },
+    {
+      "action": "mouse_move",
+      "x": 1247,
+      "y": 1141
+    },
+    {
+      "action": "sleep",
+      "seconds": 0.27
+    },
+    {
+      "action": "mouse_move",
+      "x": 1035,
+      "y": 1069
+    },
+    {
+      "action": "sleep",
+      "seconds": 0.25
+    },
+    {
+      "action": "mouse_move",
+      "x": 515,
+      "y": 745
+    },
+    {
+      "action": "sleep",
+      "seconds": 0.25
+    },
+    {
+      "action": "mouse_move",
+      "x": 9,
+      "y": 307
+    },
+    {
+      "action": "sleep",
+      "seconds": 0.35
+    },
+    {
+      "action": "mouse_move",
+      "x": 89,
+      "y": 520
+    },
+    {
+      "action": "sleep",
+      "seconds": 0.29
+    },
+    {
+      "action": "click_point",
+      "x": 79,
+      "y": 510
+    },
+    {
+      "action": "sleep",
+      "seconds": 0.16
+    },
+    {
+      "action": "click_point",
+      "x": 79,
+      "y": 510
+    }
+  ]
+}
